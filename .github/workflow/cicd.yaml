@@ -1,1 +1,34 @@
 
+name: ci-cd-fast-api
+on:
+  push:
+    branches: main
+jobs:
+  upload-code-to-server:
+    runs-on: ubuntu-latest
+    env:
+      DOMAIN: 54.167.30.97
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v2
+        with:
+          ref: main
+      
+      - name: Setup SSH Key
+        run: |
+         sudo mkdir -p ~/.ssh
+          echo "${{ secrets.AWS_GITUB }}" > ~/.ssh/github_aws.pem
+          chmod 600 ~/.ssh/github_aws.pem
+          ssh-keyscan -H $DOMAIN >> ~/.ssh/known_hosts
+        env:
+          ACTIONS_RUNNER_DEBUG: true
+      
+      - name: Run test Deployment
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/github_aws.pem ec2-user@$DOMAIN 'bash /home/ubuntu-user/deploy.sh'
+        env:
+          ACTIONS_RUNNER_DEBUG: true
+
+      - name: Cleanup
+        run: rm -f ~/.ssh/github_aws.pem
+        if: always()

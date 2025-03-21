@@ -46,7 +46,7 @@ jobs:
             # Set up Nginx to serve index.html
             echo 'server {
                 listen 80;
-                server_name 54.167.30.97;
+                server_name 54.87.108.158;
 
                 root /var/www/aws_cicd;
                 index index.html;

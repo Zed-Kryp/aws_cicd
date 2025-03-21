@@ -1,34 +1,72 @@
+name: Deploy to AWS Ubuntu
 
-name: ci-cd-fast-api
 on:
   push:
-    branches: main
+    branches:
+      - main  # Runs on push to the 'main' branch
+  workflow_dispatch:  # Allows manual trigger
+
 jobs:
-  upload-code-to-server:
+  deploy:
     runs-on: ubuntu-latest
-    env:
-      DOMAIN: 54.167.30.97
+
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v2
-        with:
-          ref: main
-      
-      - name: Setup SSH Key
-        run: |
-         sudo mkdir -p ~/.ssh
-          echo "${{ secrets.AWS_GITUB }}" > ~/.ssh/github_aws.pem
-          chmod 600 ~/.ssh/github_aws.pem
-          ssh-keyscan -H $DOMAIN >> ~/.ssh/known_hosts
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up SSH and Deploy to AWS
         env:
-          ACTIONS_RUNNER_DEBUG: true
-      
-      - name: Run test Deployment
+          AWS_GITHUB: ${{ secrets.AWS_GITHUB }}
         run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/github_aws.pem ec2-user@$DOMAIN 'bash /home/ubuntu-user/deploy.sh'
-        env:
-          ACTIONS_RUNNER_DEBUG: true
+          echo "Setting up SSH key..."
+          echo "${{ secrets.AWS_GITHUB }}" > aws_key.pem
+          chmod 600 aws_key.pem
+
+          echo "Connecting to AWS Ubuntu Instance..."
+          ssh -o StrictHostKeyChecking=no -i aws_key.pem ubuntu@54.167.30.97 << 'EOF'
+            
+            # Update system packages
+            sudo apt update -y && sudo apt upgrade -y
+
+            # Install Nginx & Git
+            sudo apt install -y nginx git
+
+            # Allow Nginx through firewall
+            sudo ufw allow 'Nginx Full'
+
+            # Remove old repo if exists
+            sudo rm -rf /var/www/aws_cicd
+
+            # Clone the latest repo
+            sudo git clone https://github.com/Zed-Kryp/aws_cicd.git /var/www/aws_cicd
+
+            # Change ownership to Nginx user
+            sudo chown -R www-data:www-data /var/www/aws_cicd
+
+            # Set up Nginx to serve index.html
+            echo 'server {
+                listen 80;
+                server_name 54.167.30.97;
+
+                root /var/www/aws_cicd;
+                index index.html;
+
+                location / {
+                    try_files $uri $uri/ =404;
+                }
+            }' | sudo tee /etc/nginx/sites-available/aws_cicd
+
+            # Enable the new site
+            sudo ln -sf /etc/nginx/sites-available/aws_cicd /etc/nginx/sites-enabled/
+            
+            # Remove default Nginx page
+            sudo rm -f /etc/nginx/sites-enabled/default
+
+            # Restart Nginx
+            sudo systemctl restart nginx
+            sudo systemctl enable nginx
+
+          EOF
 
       - name: Cleanup
-        run: rm -f ~/.ssh/github_aws.pem
-        if: always()
+        run: rm -f aws_key.pem
